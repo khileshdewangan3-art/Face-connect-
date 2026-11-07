@@ -32,14 +32,14 @@ public class ChatActivity extends Activity implements FirebaseRelay.Callback {
         input=new EditText(this);input.setSingleLine(true);input.setHint("Message");composer.addView(input,new LinearLayout.LayoutParams(0,-2,1));
         Button send=new Button(this);send.setText("Send");send.setTextColor(Color.WHITE);send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(blue));send.setOnClickListener(v->sendMessage());composer.addView(send);root.addView(composer);
         setContentView(root);renderLocal();
-        try{relay=new FirebaseRelay();relay.connect(this);}catch(Exception e){status.setText("Firebase setup pending. Local chat history is available on this phone.");}
+        try{relay=new FirebaseRelay();relay.connect(this, this);}catch(Exception e){status.setText("Local chat history available. Relay server setup pending.");}
     }
     @Override public void onReady(String uid){myUid=uid;identity.setText("Your FaceConnect ID: "+uid+"\nChat with ID: "+peerUid);status.setText("Connected to message relay");}
     @Override public void onMessage(String id,String from,String body,long time){store.save(new LocalMessageStore.Message(id,from,from,body,time));if(from.equals(peerUid))renderLocal();}
     @Override public void onError(String message){status.setText("Connection: "+message);}
     void sendMessage(){
         String body=input.getText().toString().trim();if(body.isEmpty())return;
-        if(myUid.isEmpty()){status.setText("Connect Firebase first. Message was not sent.");return;}
+        if(myUid.isEmpty()){status.setText("Chat identity is not ready. Message was not sent.");return;}
         long now=System.currentTimeMillis();String localId="local-"+now;
         store.save(new LocalMessageStore.Message(localId,peerUid,myUid,body,now));input.setText("");renderLocal();
         relay.send(myUid,peerUid,body,this);
