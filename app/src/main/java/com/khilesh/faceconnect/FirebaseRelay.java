@@ -1,69 +1,89 @@
 package com.khilesh.faceconnect;
 
-import com.google.firebase.FirebaseApp;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.database.ChildEventListener;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
-import com.google.firebase.database.DatabaseReference;
-import com.google.firebase.database.FirebaseDatabase;
-import java.util.HashMap;
-import java.util.Map;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.UUID;
+import android.content.Context;
+import android.content.SharedPreferences;
 
-/**
- * Temporary relay only: incoming messages are copied to local SQLite then deleted
- * from the recipient's Firebase inbox. This is not end-to-end encryption.
- */
 public class FirebaseRelay {
     public interface Callback {
         void onReady(String uid);
         void onMessage(String id, String fromUid, String body, long sentAt);
         void onError(String message);
     }
-    private final FirebaseAuth auth;
-    private final DatabaseReference root;
-    private ChildEventListener inboxListener;
+    // Replace this with the deployed HTTPS URL from your own relay hosting.
+    private static final String SERVER = "https://YOUR-RENDER-SERVICE.onrender.com";
+    private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
+    private volatile boolean running = false;
+    private String uid = "";
+    private Callback callback;
 
-    public FirebaseRelay() {
-        if (FirebaseApp.getApps().isEmpty()) throw new IllegalStateException("Firebase is not configured. Add app/google-services.json.");
-        auth=FirebaseAuth.getInstance();
-        root=FirebaseDatabase.getInstance().getReference();
+    public void connect(Context context, Callback cb) {
+        callback = cb;
+        SharedPreferences prefs = context.getSharedPreferences("faceconnect_identity", Context.MODE_PRIVATE);
+        uid = prefs.getString("uid", "");
+        if (uid.isEmpty()) {
+            uid = UUID.randomUUID().toString().replace("-", "");
+            prefs.edit().putString("uid", uid).apply();
+        }
+        cb.onReady(uid);
+        if (SERVER.contains("YOUR-RENDER-SERVICE")) {
+            cb.onError("Relay server deploy karna baki hai. README ke steps follow karein.");
+            return;
+        }
+        running = true;
+        worker.scheduleWithFixedDelay(this::poll, 0, 4, TimeUnit.SECONDS);
     }
-    public void connect(Callback callback) {
-        if(auth.getCurrentUser()!=null) startInbox(callback,auth.getCurrentUser().getUid());
-        else auth.signInAnonymously().addOnSuccessListener(result ->
-            startInbox(callback,result.getUser().getUid())
-        ).addOnFailureListener(e -> callback.onError(e.getMessage()==null?"Firebase sign-in failed":e.getMessage()));
-    }
-    private void startInbox(Callback callback,String uid) {
-        callback.onReady(uid);
-        inboxListener=root.child("inbox").child(uid).addChildEventListener(new ChildEventListener() {
-            @Override public void onChildAdded(DataSnapshot snap,String previous) {
-                String from=snap.child("from").getValue(String.class);
-                String body=snap.child("body").getValue(String.class);
-                Long sent=snap.child("sentAt").getValue(Long.class);
-                if(from==null || body==null || sent==null) { snap.getRef().removeValue(); return; }
-                callback.onMessage(snap.getKey(),from,body,sent);
-                snap.getRef().removeValue(); // recipient has received it; long-term history stays on device
-            }
-            @Override public void onChildChanged(DataSnapshot s,String p) { }
-            @Override public void onChildRemoved(DataSnapshot s) { }
-            @Override public void onChildMoved(DataSnapshot s,String p) { }
-            @Override public void onCancelled(DatabaseError e) { callback.onError(e.getMessage()); }
+
+    public void send(String myUid, String recipientUid, String body, Callback cb) {
+        worker.execute(() -> {
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("from", myUid); payload.put("to", recipientUid); payload.put("body", body);
+                request("POST", SERVER + "/messages", payload.toString());
+            } catch (Exception e) { cb.onError("Message send failed: " + e.getMessage()); }
         });
     }
-    public void send(String myUid,String recipientUid,String body,Callback callback) {
-        if(recipientUid==null || recipientUid.trim().isEmpty()) { callback.onError("Recipient ID is required."); return; }
-        String id=root.child("inbox").child(recipientUid).push().getKey();
-        Map<String,Object> payload=new HashMap<>();
-        payload.put("from",myUid); payload.put("to",recipientUid); payload.put("body",body);
-        payload.put("sentAt",System.currentTimeMillis());
-        root.child("inbox").child(recipientUid).child(id).setValue(payload)
-            .addOnSuccessListener(v -> { })
-            .addOnFailureListener(e -> callback.onError(e.getMessage()));
+
+    private void poll() {
+        if (!running) return;
+        try {
+            JSONObject response = new JSONObject(request("GET", SERVER + "/inbox/" + uid, null));
+            JSONArray items = response.optJSONArray("messages");
+            if (items == null) return;
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject m = items.getJSONObject(i);
+                callback.onMessage(m.optString("id"), m.optString("from"), m.optString("body"), m.optLong("sentAt"));
+            }
+        } catch (Exception e) { callback.onError("Relay unavailable: " + e.getMessage()); }
     }
-    public void disconnect() {
-        if(inboxListener!=null && auth.getCurrentUser()!=null)
-            root.child("inbox").child(auth.getCurrentUser().getUid()).removeEventListener(inboxListener);
+
+    private String request(String method, String endpoint, String json) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection();
+        c.setRequestMethod(method); c.setConnectTimeout(10000); c.setReadTimeout(10000);
+        if (json != null) {
+            c.setDoOutput(true); c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            try (OutputStream out = c.getOutputStream()) { out.write(json.getBytes(StandardCharsets.UTF_8)); }
+        }
+        int code = c.getResponseCode();
+        java.io.InputStream stream = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+        StringBuilder result = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line; while ((line = reader.readLine()) != null) result.append(line);
+        } finally { c.disconnect(); }
+        if (code < 200 || code >= 300) throw new Exception("HTTP " + code + ": " + result);
+        return result.toString();
     }
+
+    public void disconnect() { running = false; worker.shutdownNow(); }
 }
