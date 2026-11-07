@@ -8,7 +8,20 @@ android {
         applicationId 'com.khilesh.faceconnect'
         minSdk 23
         targetSdk 35
-        versionCode 1
-        versionName '1.0'
+        versionCode 2
+        versionName '1.1'
     }
+}
+
+// Firebase is enabled automatically after google-services.json is added.
+// The app remains buildable as a local-only app before Firebase is configured.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:34.5.0')
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-database'
+    implementation 'androidx.core:core:1.15.0'
 }
