@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "inbox": {
+      "$recipientUid": {
+        ".read": "auth != null && auth.uid === $recipientUid",
+        "$messageId": {
+          ".write": "auth != null && ((!data.exists() && newData.child('from').val() === auth.uid && newData.child('to').val() === $recipientUid) || (data.exists() && auth.uid === $recipientUid && !newData.exists()))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['from','to','body','sentAt']) && newData.child('body').isString() && newData.child('body').val().length <= 4000 && newData.child('sentAt').isNumber())"
+        }
+      }
+    }
+  }
+}
