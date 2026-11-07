@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: faceconnect-relay
+    name: faceconnect-api
     runtime: node
     rootDir: server
     buildCommand: npm install
