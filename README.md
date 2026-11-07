@@ -1,26 +1,24 @@
 # FaceConnect Android
 
-FaceConnect is a Java Android community and messaging app.
+Java Android app with a local-first chat design and a standalone Node.js message relay. Firebase is not used.
 
-## Local-first design
-- Posts, likes and comments are saved on the device.
-- Chat history is stored in the app's private SQLite database on each phone.
-- Message delivery uses Firebase Realtime Database as a temporary relay.
-- The recipient saves an incoming message locally and then the app deletes that relay item.
-- This is not end-to-end encryption. Do not use it for sensitive messages until audited E2EE is implemented.
+## Chat architecture
+- Each phone stores its own conversation history in its private SQLite database.
+- The Android app gets a stable random FaceConnect ID on first launch.
+- Messages are sent through the standalone HTTPS relay.
+- The relay keeps undelivered messages in RAM only, for up to 24 hours, and removes them when the recipient fetches them.
+- The relay does not write message history to disk. A server restart/redeploy can lose undelivered messages.
+- This prototype is NOT end-to-end encrypted and IDs are not yet protected by account authentication. Do not use for sensitive conversations.
 
-## Configure online chat
-1. Create an Android app in Firebase with package name `com.khilesh.faceconnect`.
-2. Download `google-services.json` and put it at `app/google-services.json`.
-3. In Firebase Authentication, enable **Anonymous** sign-in.
-4. Create a Realtime Database.
-5. In Realtime Database Rules, publish the contents of `database.rules.json`.
-6. Build the APK using GitHub Actions.
-
-The Friends tab has a **Chat with FaceConnect ID** action. Each user opens Chat to see their own Firebase UID and shares it with the other person. The other person enters that UID to start a chat.
+## Deploy the relay (one-time setup)
+1. Push this repository to GitHub.
+2. In Render, create a new Web Service and connect this repository. The included `render.yaml` can configure it automatically.
+3. Wait for deployment and copy the service HTTPS URL, for example `https://your-service.onrender.com`.
+4. Open `app/src/main/java/com/khilesh/faceconnect/FirebaseRelay.java` and replace `https://YOUR-RENDER-SERVICE.onrender.com` with your real service URL.
+5. Commit and push the change. GitHub Actions will build the APK.
 
 ## Build APK
 Open Actions → Build FaceConnect APK → wait for success → download the `FaceConnect-debug-apk` artifact.
 
-## Important
-Without Firebase configuration, the app can still build and its local feed works, but online message delivery remains disabled. Pending messages exist temporarily in the relay inbox until the recipient receives them; received messages are deleted from the relay after being copied to the recipient's local database. Local app data can be lost if the user clears app storage or uninstalls the app. This first chat version uses anonymous Firebase IDs and does not yet include phone-number login, contact discovery, media attachments, push notifications, or end-to-end encryption.
+## Important limitations
+This is a prototype relay, not a production messaging service. The current RAM queue can lose messages on server restart and has no durable delivery guarantee, push notifications, phone verification, abuse controls, or end-to-end encryption. Free hosting may sleep when idle. Chat history remains on the phone and can be lost if app data is cleared or the app is uninstalled.
