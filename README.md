@@ -1,16 +1,21 @@
 # FaceConnect Android
 
-A starter Android social app prototype.
+FaceConnect is an Android community app built with Java and Android SDK.
 
-## Current features
-- Social feed
-- Create text posts
-- Like posts
-- Add comments
-- Android APK build via GitHub Actions
+## Working in this build
+- Clean mobile-first FaceConnect interface
+- Create and publish text posts
+- Like / unlike posts
+- Add comments to posts
+- Search posts by author or text
+- Home, Friends, Alerts and Profile sections
+- Posts, likes and comments persist locally on the device using SharedPreferences
 
-## Build
-Open GitHub Actions and run **Build FaceConnect APK**. Download the artifact named **FaceConnect-debug-apk**.
+## Build an APK
+1. Open the **Actions** tab in this repository.
+2. Select **Build FaceConnect APK**.
+3. Wait for the workflow to finish.
+4. Open the successful run and download **FaceConnect-debug-apk** from Artifacts.
 
-## Important
-This first version is a local prototype. Posts, likes and comments are stored in memory and reset when the app restarts. Online accounts, friend requests, photo uploads, notifications and chat require a backend and will be added in later stages.
+## Important backend status
+This version is a functional **single-device/local prototype**. It does not yet provide cloud accounts, cross-device synchronization, real friend requests, push notifications, photo uploads or chat. Those features need Firebase configuration and backend security rules; the app does not pretend local demo actions are online services.
